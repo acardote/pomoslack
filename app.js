@@ -28,19 +28,19 @@ function handleRequest(request, response) {
             var postData = qs.parse(requestBody);
             console.log(postData);
 
-            response.writeHead(200, {
-                'Content-Type': 'text/html'
-            });
-            response.write('<!doctype html><html><head><title>response</title></head><body>');
-            response.end('</body></html>');
-
             // TODO: Verify slack token
 
             // Start pomodoro with default timer
             if (postData.command === '/pomostart') {
                 if (postData.text === '') {
-                    rClient.set(postData.user_name, 'inPomo', redis.print);
-                    rClient.expire(postData.user_name, 15, redis.print);
+                    rClient.set('@'+postData.user_name, 'inPomo', redis.print);
+                    rClient.expire('@'+postData.user_name, 15, redis.print);
+                    
+                    response.writeHead(200, {
+                        'Content-Type': 'text/html'
+                    });
+                    response.end('Your pomodoro has just started. See you again in 50 minutes!');
+
                     // Use slack API to set user's notifications off for x amount of time
                 }
                 // Start pomodoro with custom timer
@@ -49,19 +49,28 @@ function handleRequest(request, response) {
                 }
             } else if (postData.command === '/pomocheck') {
                 // Check if the key exists
-                rClient.exists(postData.user_name, 'inPomo', function (err, reply) {
+                rClient.exists(postData.text, function (err, reply) {
                     if (err) {
                         return console.error("error response - " + err);
                     }
 
                     // if the key exists, the user is not in a pomodoro
                     if (reply == 1) {
-                        rClient.ttl(postData.user_name, function (err, time) {
-                            console.log(postData.user_name + ' is in a pomodoro until ' + time + 'seconds from now.');
+                        rClient.ttl(postData.text, function (err, time) {
+                            response.writeHead(200, {
+                                'Content-Type': 'text/html'
+                            });
+                            response.end(postData.text + ' is in a pomodoro until ' + time + ' seconds from now.');
+                            console.log(postData.text + ' is in a pomodoro until ' + time + ' seconds from now.');
                         })
 
                     } else {
-                        console.log(postData.user_name + ' is not in a pomodoro');
+                        response.writeHead(200, {
+                            'Content-Type': 'text/html'
+                        });
+                        response.end(postData.text + ' is not in a pomodoro.');
+
+                        console.log(postData.text + ' is not in a pomodoro');
                     }
                 });
 
