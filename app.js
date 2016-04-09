@@ -58,17 +58,19 @@ function handleRequest(request, response) {
                     response.writeHead(200, {
                         'Content-Type': 'text/html'
                     });
-                    response.end('Your pomodoro has just started, I\'ve just disabled your notifications for ' + defaultNotifTime/60 + ' minutes. See you soon!');
+                    response.end('Your pomodoro has just started, I suggest you disable your notifications for ' + defaultNotifTime/60 + ' minutes with /dnd '+ defaultNotifTime/60 +' minutes . See you soon!');
 
-                    // Use slack API to set user's notifications off for x amount of time
-                    console.log ('Snoozing ' + postData.user_name);
-                    slack = new Slack(postData.token);
-                    slack.api('dnd.setSnooze', {
-                        num_minutes: defaultNotifTime/60
-                        , user_name: postData.user_name
-                    }, function (err, response) {
-                        console.log(response);
-                    });
+                    // FUTURE: Use slack API to set user's notifications off for x amount of time
+//                    console.log ('Snoozing ' + postData.user_name);
+//                    slack = new Slack(postData.token);
+//                    slack.api('dnd.setSnooze', {
+//                        num_minutes: defaultNotifTime/60
+//                        , user_name: postData.user_name
+//                    }, function (err, response) {
+//                        console.log(response);
+//                    });
+                    
+                    
                 }
                 // Start pomodoro with custom timer
                 else {
@@ -139,21 +141,22 @@ function handleRequest(request, response) {
                                 console.log('Adding ' + postData.user_name + ' to ' + postData.text + ' list');
                                 rClient.set(postData.text, syncedList + ' ' + postData.user_name, redis.print);
                                 rClient.set('shadow_' + postData.text, syncedList + ' ' + postData.user_name, redis.print); // Using a shadow key to keep access to value when key expires
+                                console.log('Refreshing ' + postData.text);
                                 rClient.expire(postData.text, time, redis.print);
 
                                 // Set my expiration date
-                                rClient.expire(postData.user_name, time, redis.print);
+                                rClient.expire('@' + postData.user_name, time, redis.print);
 
-                                // Use slack API to set user's notifications off for x amount of time
-                                slack.api('dnd.setSnooze', {
-                                    num_minutes: time
-                                    , user_name: postData.user_name
-                                }, function (err, response) {
-                                    console.log(response);
-                                });
+                                // FUTURE: Use slack API to set user's notifications off for x amount of time
+//                                slack.api('dnd.setSnooze', {
+//                                    num_minutes: time
+//                                    , user_name: postData.user_name
+//                                }, function (err, response) {
+//                                    console.log(response);
+//                                });
 
                                 // Send response
-                                response.end('You should be able to talk with ' + postData.text + ' in ' + Number(time / 60).toFixed(0) + ' minutes. I\'ve synced your pomodoros');
+                                response.end('You should be able to talk with ' + postData.text + ' in ' + Number(time / 60).toFixed(0) + ' minutes. I\'ve synced your pomodoros and I suggest you disable your notifications for ' + Number(time / 60).toFixed(0) + ' minutes with /dnd '+ Number(time / 60).toFixed(0) +' minutes . See you soon!');
                             });
 
                             
