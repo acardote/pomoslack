@@ -1,4 +1,5 @@
-var http = require('http');
+var https = require('https');
+var fs = require('fs');
 var redis = require('redis');
 var qs = require('querystring');
 var Slack = require('slack-node');
@@ -245,7 +246,11 @@ eventNotifier.on('message', function (pattern, channelPattern, emittedKey) {
 
 
 // Create a server
-var server = http.createServer(handleRequest);
+var options = {
+  key: fs.readFileSync('/home/ubuntu/certs/key.pem'),
+  cert: fs.readFileSync('/home/ubuntu/certs/cert.pem')
+};
+var server = https.createServer(options, handleRequest);
 
 // Start the server
 server.listen(PORT, function () {
