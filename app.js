@@ -6,7 +6,7 @@ var RedisNotifier = require('redis-notifier');
 
 
 const PORT = 8080;
-const defaultNotifTime = 5*60; //seconds
+const defaultNotifTime = 5 * 60; //seconds
 
 // Setup redis connection
 rClient = redis.createClient();
@@ -58,19 +58,29 @@ function handleRequest(request, response) {
                     response.writeHead(200, {
                         'Content-Type': 'text/html'
                     });
-                    response.end('Your pomodoro has just started, I suggest you disable your notifications for ' + defaultNotifTime/60 + ' minutes with /dnd '+ defaultNotifTime/60 +' minutes . See you soon!');
 
-                    // FUTURE: Use slack API to set user's notifications off for x amount of time
-//                    console.log ('Snoozing ' + postData.user_name);
-//                    slack = new Slack(postData.token);
-//                    slack.api('dnd.setSnooze', {
-//                        num_minutes: defaultNotifTime/60
-//                        , user_name: postData.user_name
-//                    }, function (err, response) {
-//                        console.log(response);
-//                    });
-                    
-                    
+
+                    // Use slack API to set user's notifications off for x amount of time
+                    rClient.get('tok_' + postData.team_domain + '_' + postData.user_name, function (err, reply) {
+                        if (err) {
+                            return console.error("error response - " + err);
+                        }
+                        if (reply != null) {
+                            console.log('Snoozing ' + postData.user_name);
+                            slack = new Slack(reply);
+                            slack.api('dnd.setSnooze', {
+                                num_minutes: defaultNotifTime / 60
+                                , user_name: postData.user_name
+                            }, function (err, response) {
+                                console.log(response);
+                            });
+                            response.end('Your pomodoro has just started, I\'ve disabled your notifications for ' + defaultNotifTime / 60 + ' minutes. See you soon!');
+
+                        } else {
+                            response.end('You have not setup pomoslack yet, so I could not disable your notifications autmatically. See /pomoslack help');
+                        }
+                    })
+
                 }
                 // Start pomodoro with custom timer
                 else {
@@ -89,8 +99,8 @@ function handleRequest(request, response) {
                             response.writeHead(200, {
                                 'Content-Type': 'text/html'
                             });
-                            response.end(postData.text + ' is in a pomodoro until ' + Number(time / 60).toFixed(0) + ' minutes from now.');
-                            console.log(postData.text + ' is in a pomodoro until ' + Number(time / 60).toFixed(0) + ' minutes from now.');
+                            response.end(postData.text + ' will be available in ' + Number(time / 60).toFixed(0) + ' minutes.');
+                            console.log(postData.text + ' will be available in ' + Number(time / 60).toFixed(0) + ' minutes.');
                         })
 
                     } else {
@@ -108,20 +118,35 @@ function handleRequest(request, response) {
                 rClient.del('@' + postData.user_name, '', redis.print);
                 rClient.del('shadow_@' + postData.user_name, '', redis.print);
 
-                // Cancel notif snooze
-                slack.api('dnd.endSnooze', {
-                    user_name: postData.user_name
-                }, function (err, response) {
-                    console.log(response);
-                });
+                // Use slack API to cancel the user's snooze
+                rClient.get('tok_' + postData.team_domain + '_' + postData.user_name, function (err, reply) {
+                    if (err) {
+                        return console.error("error response - " + err);
+                    }
+                    response.writeHead(200, {
+                            'Content-Type': 'text/html'
+                        });
+                    
+                    if (reply != null) {
+                        console.log('Snoozing ' + postData.user_name);
+                        slack = new Slack(reply);
+                        slack.api('dnd.endSnooze', function (err, resp) {
+                            console.log(resp);
 
-                // Reply
-                response.end('I\'ve cancelled your pomodoro. Hope it\'s for a good reason!');
-                console.log('I\'ve cancelled your pomodoro. Hope it\'s for a good reason!');
+                            // Reply
+                            response.end('I\'ve cancelled your pomodoro. Hope it\'s for a good reason!');
+                            console.log('I\'ve cancelled your pomodoro. Hope it\'s for a good reason!');
+
+                        });
+
+                    } else {
+                        response.end('You have not setup pomoslack yet, so I could not disable your notifications autmatically. See /pomoslack help');
+                    }
+                })
 
             } else if (postData.command === '/pomosync') {
 
-                console.log('Syncing with: '+ postData.text);    
+                console.log('Syncing with: ' + postData.text);
                 // Check if the key exists
                 rClient.exists(postData.text, function (err, reply) {
                     if (err) {
@@ -135,7 +160,7 @@ function handleRequest(request, response) {
                                 'Content-Type': 'text/html'
                             });
                             // Get other user's synced people list
-                            rClient.get(postData.text, function(err, reply){
+                            rClient.get(postData.text, function (err, reply) {
                                 var syncedList = reply;
                                 // Add me to the other user's synced list
                                 console.log('Adding ' + postData.user_name + ' to ' + postData.text + ' list');
@@ -147,19 +172,28 @@ function handleRequest(request, response) {
                                 // Set my expiration date
                                 rClient.expire('@' + postData.user_name, time, redis.print);
 
-                                // FUTURE: Use slack API to set user's notifications off for x amount of time
-//                                slack.api('dnd.setSnooze', {
-//                                    num_minutes: time
-//                                    , user_name: postData.user_name
-//                                }, function (err, response) {
-//                                    console.log(response);
-//                                });
+                                // Use slack API to set user's notifications off for x amount of time
+                                rClient.get('tok_' + postData.team_domain + '_' + postData.user_name, function (err, reply) {
+                                    if (err) {
+                                        return console.error("error response - " + err);
+                                    }
+                                    if (reply != null) {
+                                        console.log('Snoozing ' + postData.user_name);
+                                        slack = new Slack(reply);
+                                        slack.api('dnd.setSnooze', {
+                                            num_minutes: Number(time / 60).toFixed(0)
+                                        }, function (err, response) {
+                                            console.log(response);
+                                        });
+                                        
+                                        // Send response
+                                        response.end('You should be able to talk with ' + postData.text + ' within ' + Number(time / 60).toFixed(0) + ' minutes. I\'ve synced your pomodoros and slack notifications. See you soon!');
 
-                                // Send response
-                                response.end('You should be able to talk with ' + postData.text + ' in ' + Number(time / 60).toFixed(0) + ' minutes. I\'ve synced your pomodoros and I suggest you disable your notifications for ' + Number(time / 60).toFixed(0) + ' minutes with /dnd '+ Number(time / 60).toFixed(0) +' minutes . See you soon!');
+                                    } else {
+                                        response.end('You should be able to talk with ' + postData.text + ' within ' + Number(time / 60).toFixed(0) + ' minutes. You have not setup pomoslack yet, so I could not disable your notifications autmatically. See /pomoslack help');
+                                    }
+                                })
                             });
-
-                            
                         });
 
                     } else {
@@ -171,6 +205,17 @@ function handleRequest(request, response) {
                         console.log(postData.text + ' is not in a pomodoro');
                     }
                 });
+            } else if (postData.command === '/pomoslack') {
+                var pdText = postData.text.split(' ');
+                switch (pdText[0]) {
+                case 'setup':
+                    if (pdText[1] === '') {
+                        response.end('Token missing. Usage: /pomoslack setup <token>');
+                        break;
+                    }
+                    rClient.set('tok_' + postData.team_domain + '_' + postData.user_name, pdText[1]);
+                    response.end('Token stored. Thank you, enjoy pomoslack!');
+                }
             } else {
                 response.writeHead(405, 'Method Not Supported', {
                     'Content-Type': 'text/html'
@@ -193,14 +238,25 @@ function handleExpire(key) {
         rClient.del(shadowKey, '', redis.print);
 
         // Send notification to user
-        slack.api('chat.postMessage', {
-            username: 'Pomoslack'
-            , channel: key
-            , as_user: false
-            , text: 'Your pomodoro just ended! ' + value + ' wanted to talk to you.'
-        }, function (err, response) {
-            console.log(response);
-        });
+        if (value === "") {
+            slack.api('chat.postMessage', {
+                username: 'Pomoslack'
+                , channel: key
+                , as_user: false
+                , text: 'Your pomodoro just ended!'
+            }, function (err, response) {
+                console.log(response);
+            });
+        } else {
+            slack.api('chat.postMessage', {
+                username: 'Pomoslack'
+                , channel: key
+                , as_user: false
+                , text: 'Your pomodoro just ended! ' + value + ' wanted to talk to you.'
+            }, function (err, response) {
+                console.log(response);
+            });
+        }
 
         // Send notification to synced users and cancel their pomodoros
         var users = value.split(' ');
@@ -218,16 +274,49 @@ function handleExpire(key) {
                 console.log(response);
             });
 
-            // Send notification to user
-            console.log('Sending notification to ' + user);
-            slack.api('chat.postMessage', {
-                username: 'Pomoslack'
-                , channel: user
-                , as_user: false
-                , text: key + 'pomodoro just ended. I\'ve cancelled your pomodoro as you asked me, go talk to him!'
-            }, function (err, response) {
-                console.log(response);
-            });
+            // Use slack API to cancel the user's snooze
+            rClient.get('tok_' + postData.team_domain + '_' + postData.user_name, function (err, reply) {
+                if (err) {
+                    return console.error("error response - " + err);
+                }
+
+                if (reply != null) {
+                    console.log('Cancelling ' + postData.user_name);
+                    slack = new Slack(reply);
+                    slack.api('dnd.endSnooze', function (err, resp) {
+                        console.log(resp);
+
+                        // Send notification to user
+                        console.log('Sending notification to ' + user);
+                        slack.api('chat.postMessage', {
+                            username: 'Pomoslack'
+                            , channel: user
+                            , as_user: false
+                            , text: key + 'pomodoro just ended. I\'ve cancelled your pomodoro and enabled notifications as you asked me, go talk to him!'
+                        }, function (err, response) {
+                            console.log(response);
+                        });
+
+                    });
+
+                } else {
+
+                    // Send notification to user
+                    console.log('Sending notification to ' + user);
+                    slack.api('chat.postMessage', {
+                        username: 'Pomoslack'
+                        , channel: user
+                        , as_user: false
+                        , text: key + 'pomodoro just ended. I\'ve cancelled your pomodoro I could not disable your notifications autmatically. See /pomoslack help'
+                    }, function (err, response) {
+                        console.log(response);
+                    });
+                    
+                }
+            })
+
+            
+            
         })
     })
 
