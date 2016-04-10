@@ -51,9 +51,9 @@ function handleRequest(request, response) {
             // Start pomodoro with default timer
             if (postData.command === '/pomostart') {
                 if (postData.text === '') {
-                    rClient.set('@' + postData.user_name, '', redis.print);
-                    rClient.expire('@' + postData.user_name, defaultNotifTime, redis.print); // Testing. 50x60
-                    rClient.set('shadow_@' + postData.user_name, '', redis.print); // Using a shadow key to keep access to value when key expires
+                    rClient.set('pom_' + postData.team_domain + '_' + postData.user_name, '', redis.print);
+                    rClient.expire('pom_' + postData.team_domain + '_' + postData.user_name, defaultNotifTime, redis.print); // Testing. 50x60
+                    rClient.set('shadow_pom_' + postData.team_domain + '_' + postData.user_name, '', redis.print); // Using a shadow key to keep access to value when key expires
 
                     response.writeHead(200, {
                         'Content-Type': 'text/html'
@@ -88,14 +88,14 @@ function handleRequest(request, response) {
                 }
             } else if (postData.command === '/pomocheck') {
                 // Check if the key exists
-                rClient.exists(postData.text, function (err, reply) {
+                rClient.exists('pom_' + postData.team_domain + '_' + postData.text.substr(1), function (err, reply) {
                     if (err) {
                         return console.error("error response - " + err);
                     }
 
                     // if the key exists, the user is in a pomodoro
                     if (reply == 1) {
-                        rClient.ttl(postData.text, function (err, time) {
+                        rClient.ttl('pom_' + postData.team_domain + '_' + postData.text.substr(1), function (err, time) {
                             response.writeHead(200, {
                                 'Content-Type': 'text/html'
                             });
@@ -115,8 +115,8 @@ function handleRequest(request, response) {
 
             } else if (postData.command === '/pomocancel') {
                 // Delete the key from the database
-                rClient.del('@' + postData.user_name, '', redis.print);
-                rClient.del('shadow_@' + postData.user_name, '', redis.print);
+                rClient.del('pom_' + postData.team_domain + '_' + postData.user_name, '', redis.print);
+                rClient.del('shadow_pom_' + postData.team_domain + '_' + postData.user_name, '', redis.print);
 
                 // Use slack API to cancel the user's snooze
                 rClient.get('tok_' + postData.team_domain + '_' + postData.user_name, function (err, reply) {
@@ -146,31 +146,31 @@ function handleRequest(request, response) {
 
             } else if (postData.command === '/pomosync') {
 
-                console.log('Syncing with: ' + postData.text);
+                console.log('Syncing with: ' + postData.text.substr(1));
                 // Check if the key exists
-                rClient.exists(postData.text, function (err, reply) {
+                rClient.exists('shadow_pom_' + postData.team_domain + '_' + postData.text.substr(1), function (err, reply) {
                     if (err) {
                         return console.error("error response - " + err);
                     }
 
                     // if the key exists, the user is in a pomodoro
                     if (reply == 1) {
-                        rClient.ttl(postData.text, function (err, time) {
+                        rClient.ttl('pom_' + postData.team_domain + '_' + postData.text.substr(1), function (err, time) {
                             response.writeHead(200, {
                                 'Content-Type': 'text/html'
                             });
                             // Get other user's synced people list
                             rClient.get(postData.text, function (err, reply) {
-                                var syncedList = reply;
+                                var syncedList = syncedList == null ? '' : reply;
                                 // Add me to the other user's synced list
-                                console.log('Adding ' + postData.user_name + ' to ' + postData.text + ' list');
-                                rClient.set(postData.text, syncedList + ' ' + postData.user_name, redis.print);
-                                rClient.set('shadow_' + postData.text, syncedList + ' ' + postData.user_name, redis.print); // Using a shadow key to keep access to value when key expires
-                                console.log('Refreshing ' + postData.text);
-                                rClient.expire(postData.text, time, redis.print);
+                                console.log('Adding ' + postData.user_name + ' to ' + postData.text.substr(1) + ' list');
+                                rClient.set('pom_' + postData.team_domain + '_' + postData.text.substr(1), syncedList + ' ' + postData.user_name, redis.print);
+                                rClient.set('shadow_pom_' + postData.team_domain + '_' + postData.text.substr(1), syncedList + ' ' + postData.user_name, redis.print); // Using a shadow key to keep access to value when key expires
+                                console.log('Refreshing ' + 'pom_' + postData.team_domain + '_' + postData.text.substr(1));
+                                rClient.expire('pom_' + postData.team_domain + '_' + postData.text.substr(1), time, redis.print);
 
                                 // Set my expiration date
-                                rClient.expire('@' + postData.user_name, time, redis.print);
+                                rClient.expire('pom_' + postData.team_domain + '_' + postData.user_name, time, redis.print);
 
                                 // Use slack API to set user's notifications off for x amount of time
                                 rClient.get('tok_' + postData.team_domain + '_' + postData.user_name, function (err, reply) {
@@ -234,37 +234,80 @@ function handleExpire(key) {
     shadowKey = 'shadow_' + key;
     rClient.get(shadowKey, function (err, reply) {
         console.log('GET ' + shadowKey + ' reply: ' + reply);
+        keySplit = key.split('_');
+        user_name = keySplit[2];
+        team = keySplit[1];
+        console.log('key: ' + key + ' user_name: ' + user_name + ' Team: ' + team);
         var value = reply;
         rClient.del(shadowKey, '', redis.print);
+        
+        // Use slack API to cancel the user's snooze and notify him
+        rClient.get('tok_' + team + '_' + user_name, function (err, reply) {
+            if (err) {
+                return console.error("error response - " + err);
+            }
 
-        // Send notification to user
-        if (value === "") {
-            slack.api('chat.postMessage', {
-                username: 'Pomoslack'
-                , channel: key
-                , as_user: false
-                , text: 'Your pomodoro just ended!'
-            }, function (err, response) {
-                console.log(response);
-            });
-        } else {
-            slack.api('chat.postMessage', {
-                username: 'Pomoslack'
-                , channel: key
-                , as_user: false
-                , text: 'Your pomodoro just ended! ' + value + ' wanted to talk to you.'
-            }, function (err, response) {
-                console.log(response);
-            });
-        }
+            if (reply != null) {
+                console.log('Cancelling ' + user_name);
+                slack = new Slack(reply);
+                slack.api('dnd.endSnooze', function (err, resp) {
+                    console.log('EndSnooze: ' + resp);
 
+                    // Send notification to user
+                    if (value === "") {
+                        slack.api('chat.postMessage', {
+                            username: 'Pomoslack'
+                            , channel: '@' + user_name
+                            , as_user: false
+                            , text: 'Your pomodoro just ended!'
+                        }, function (err, response) {
+                            console.log(response);
+                        });
+                    } else {
+                        slack.api('chat.postMessage', {
+                            username: 'Pomoslack'
+                            , channel: '@' + user_name
+                            , as_user: false
+                            , text: 'Your pomodoro just ended! ' + value + ' wanted to talk to you.'
+                        }, function (err, response) {
+                            console.log(response);
+                        });
+                    }
+                });
+
+            } else {
+
+                // Send notification to user
+                if (value === "") {
+                    slack.api('chat.postMessage', {
+                        username: 'Pomoslack'
+                        , channel: '@' + user_name
+                        , as_user: false
+                        , text: 'Your pomodoro just ended!'
+                    }, function (err, response) {
+                        console.log(response);
+                    });
+                } else {
+                    slack.api('chat.postMessage', {
+                        username: 'Pomoslack'
+                        , channel: '@' + user_name
+                        , as_user: false
+                        , text: 'Your pomodoro just ended! ' + value + ' wanted to talk to you.'
+                    }, function (err, response) {
+                        console.log(response);
+                    });
+                }
+            }
+        })
+        
+        
         // Send notification to synced users and cancel their pomodoros
-        var users = value.split(' ');
-        users.forEach(function (err, user) {
+        var users = value.substr(1).split(' ');
+        users.forEach(function (user) {
             // Cancel synced user's pomodoro
             console.log('Cancelling ' + user + ' pomodoro');
-            rClient.del('@' + user, '', redis.print);
-            rClient.del('shadow_@' + user, '', redis.print);
+            rClient.del('pom_' + team + '_' + user, '', redis.print);
+            rClient.del('shadow_pom_' + team + '_' + user, '', redis.print);
 
             // Cancel notif snooze
             console.log('Ending ' + user + ' snooze');
@@ -275,26 +318,26 @@ function handleExpire(key) {
             });
 
             // Use slack API to cancel the user's snooze
-            rClient.get('tok_' + postData.team_domain + '_' + postData.user_name, function (err, reply) {
+            rClient.get('tok_' + team + '_' + user_name, function (err, reply) {
                 if (err) {
                     return console.error("error response - " + err);
                 }
 
                 if (reply != null) {
-                    console.log('Cancelling ' + postData.user_name);
+                    console.log('Cancelling ' + user_name);
                     slack = new Slack(reply);
                     slack.api('dnd.endSnooze', function (err, resp) {
-                        console.log(resp);
+                        console.log('EndSnooze: ' + resp);
 
                         // Send notification to user
-                        console.log('Sending notification to ' + user);
+                        console.log('[A] Sending notification to ' + user);
                         slack.api('chat.postMessage', {
                             username: 'Pomoslack'
-                            , channel: user
+                            , channel: '@' + user
                             , as_user: false
-                            , text: key + 'pomodoro just ended. I\'ve cancelled your pomodoro and enabled notifications as you asked me, go talk to him!'
+                            , text: '@' + user_name + 'pomodoro just ended. I\'ve cancelled your pomodoro and enabled notifications as you asked me, go talk to him!'
                         }, function (err, response) {
-                            console.log(response);
+                            console.log('[C] PostMessage: ' + response);
                         });
 
                     });
@@ -302,14 +345,14 @@ function handleExpire(key) {
                 } else {
 
                     // Send notification to user
-                    console.log('Sending notification to ' + user);
+                    console.log('[B] Sending notification to ' + user);
                     slack.api('chat.postMessage', {
                         username: 'Pomoslack'
-                        , channel: user
+                        , channel: '@' + user
                         , as_user: false
-                        , text: key + 'pomodoro just ended. I\'ve cancelled your pomodoro I could not disable your notifications autmatically. See /pomoslack help'
+                        , text: '@' + user_name + ' pomodoro just ended. I\'ve cancelled your pomodoro I could not disable your notifications autmatically. See /pomoslack help'
                     }, function (err, response) {
-                        console.log(response);
+                        console.log('[B] PostMessage: ' + response);
                     });
                     
                 }
