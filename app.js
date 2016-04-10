@@ -6,7 +6,7 @@ var RedisNotifier = require('redis-notifier');
 
 
 const PORT = 8080;
-const defaultNotifTime = 5 * 60; //seconds
+const defaultNotifTime = 50 * 60; //seconds
 
 // Setup redis connection
 rClient = redis.createClient();
@@ -77,7 +77,7 @@ function handleRequest(request, response) {
                             response.end('Your pomodoro has just started, I\'ve disabled your notifications for ' + defaultNotifTime / 60 + ' minutes. See you soon!');
 
                         } else {
-                            response.end('You have not setup pomoslack yet, so I could not disable your notifications autmatically. See /pomoslack help');
+                            response.end('You have not setup pomopal yet, so I could not disable your notifications autmatically. See /pomopal help');
                         }
                     })
 
@@ -114,6 +114,9 @@ function handleRequest(request, response) {
                 });
 
             } else if (postData.command === '/pomocancel') {
+                
+                
+                
                 // Delete the key from the database
                 rClient.del('pom_' + postData.team_domain + '_' + postData.user_name, '', redis.print);
                 rClient.del('shadow_pom_' + postData.team_domain + '_' + postData.user_name, '', redis.print);
@@ -124,9 +127,9 @@ function handleRequest(request, response) {
                         return console.error("error response - " + err);
                     }
                     response.writeHead(200, {
-                            'Content-Type': 'text/html'
-                        });
-                    
+                        'Content-Type': 'text/html'
+                    });
+
                     if (reply != null) {
                         console.log('Snoozing ' + postData.user_name);
                         slack = new Slack(reply);
@@ -140,7 +143,7 @@ function handleRequest(request, response) {
                         });
 
                     } else {
-                        response.end('You have not setup pomoslack yet, so I could not disable your notifications autmatically. See /pomoslack help');
+                        response.end('You have not setup pomopal yet, so I could not disable your notifications autmatically. See /pomopal help');
                     }
                 })
 
@@ -185,12 +188,12 @@ function handleRequest(request, response) {
                                         }, function (err, response) {
                                             console.log(response);
                                         });
-                                        
+
                                         // Send response
                                         response.end('You should be able to talk with ' + postData.text + ' within ' + Number(time / 60).toFixed(0) + ' minutes. I\'ve synced your pomodoros and slack notifications. See you soon!');
 
                                     } else {
-                                        response.end('You should be able to talk with ' + postData.text + ' within ' + Number(time / 60).toFixed(0) + ' minutes. You have not setup pomoslack yet, so I could not disable your notifications autmatically. See /pomoslack help');
+                                        response.end('You should be able to talk with ' + postData.text + ' within ' + Number(time / 60).toFixed(0) + ' minutes. You have not setup pomopal yet, so I could not disable your notifications autmatically. See /pomopal help');
                                     }
                                 })
                             });
@@ -205,16 +208,19 @@ function handleRequest(request, response) {
                         console.log(postData.text + ' is not in a pomodoro');
                     }
                 });
-            } else if (postData.command === '/pomoslack') {
+            } else if (postData.command === '/pomopal') {
                 var pdText = postData.text.split(' ');
                 switch (pdText[0]) {
                 case 'setup':
                     if (pdText[1] === '') {
-                        response.end('Token missing. Usage: /pomoslack setup <token>');
+                        response.end('Token missing. Usage: /pomopal setup <token>');
                         break;
                     }
                     rClient.set('tok_' + postData.team_domain + '_' + postData.user_name, pdText[1]);
-                    response.end('Token stored. Thank you, enjoy pomoslack!');
+                    response.end('Token stored. Thank you, enjoy pomopal!');
+                    break;
+                default:
+                    response.end('pomopal helps you implement pomodoro on slack and sync it with your team. To configure it, got to https://api.slack.com/docs/oauth-test-tokens , generate a token for this team and run /pomopal setup <token>');
                 }
             } else {
                 response.writeHead(405, 'Method Not Supported', {
@@ -225,7 +231,6 @@ function handleRequest(request, response) {
         });
     }
 }
-
 
 
 // Handler for key expiration
@@ -240,7 +245,7 @@ function handleExpire(key) {
         console.log('key: ' + key + ' user_name: ' + user_name + ' Team: ' + team);
         var value = reply;
         rClient.del(shadowKey, '', redis.print);
-        
+
         // Use slack API to cancel the user's snooze and notify him
         rClient.get('tok_' + team + '_' + user_name, function (err, reply) {
             if (err) {
@@ -256,7 +261,7 @@ function handleExpire(key) {
                     // Send notification to user
                     if (value === "") {
                         slack.api('chat.postMessage', {
-                            username: 'Pomoslack'
+                            username: 'pomopal'
                             , channel: '@' + user_name
                             , as_user: false
                             , text: 'Your pomodoro just ended!'
@@ -265,7 +270,7 @@ function handleExpire(key) {
                         });
                     } else {
                         slack.api('chat.postMessage', {
-                            username: 'Pomoslack'
+                            username: 'pomopal'
                             , channel: '@' + user_name
                             , as_user: false
                             , text: 'Your pomodoro just ended! ' + value + ' wanted to talk to you.'
@@ -280,7 +285,7 @@ function handleExpire(key) {
                 // Send notification to user
                 if (value === "") {
                     slack.api('chat.postMessage', {
-                        username: 'Pomoslack'
+                        username: 'pomopal'
                         , channel: '@' + user_name
                         , as_user: false
                         , text: 'Your pomodoro just ended!'
@@ -289,7 +294,7 @@ function handleExpire(key) {
                     });
                 } else {
                     slack.api('chat.postMessage', {
-                        username: 'Pomoslack'
+                        username: 'pomopal'
                         , channel: '@' + user_name
                         , as_user: false
                         , text: 'Your pomodoro just ended! ' + value + ' wanted to talk to you.'
@@ -299,8 +304,8 @@ function handleExpire(key) {
                 }
             }
         })
-        
-        
+
+
         // Send notification to synced users and cancel their pomodoros
         var users = value.substr(1).split(' ');
         users.forEach(function (user) {
@@ -332,7 +337,7 @@ function handleExpire(key) {
                         // Send notification to user
                         console.log('[A] Sending notification to ' + user);
                         slack.api('chat.postMessage', {
-                            username: 'Pomoslack'
+                            username: 'pomopal'
                             , channel: '@' + user
                             , as_user: false
                             , text: '@' + user_name + 'pomodoro just ended. I\'ve cancelled your pomodoro and enabled notifications as you asked me, go talk to him!'
@@ -347,19 +352,19 @@ function handleExpire(key) {
                     // Send notification to user
                     console.log('[B] Sending notification to ' + user);
                     slack.api('chat.postMessage', {
-                        username: 'Pomoslack'
+                        username: 'pomopal'
                         , channel: '@' + user
                         , as_user: false
-                        , text: '@' + user_name + ' pomodoro just ended. I\'ve cancelled your pomodoro I could not disable your notifications autmatically. See /pomoslack help'
+                        , text: '@' + user_name + ' pomodoro just ended. I\'ve cancelled your pomodoro I could not disable your notifications autmatically. See /pomopal help'
                     }, function (err, response) {
                         console.log('[B] PostMessage: ' + response);
                     });
-                    
+
                 }
             })
 
-            
-            
+
+
         })
     })
 
